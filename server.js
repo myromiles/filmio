@@ -6,7 +6,11 @@ const cors = require('cors');
 const app = express();
 app.use(cors());
 
-const PORT = process.env.PORT || 3000;
+let PORT = 3000;
+if (process.env.PORT) {
+    PORT = process.env.PORT;
+}
+
 const BASE_URL = 'https://filmo.to';
 
 const AXIOS_CONFIG = {
@@ -41,43 +45,85 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// 2. KATALOG (Mit erweitertem Scraping & Debugging)
+// 2. KATALOG
 app.get('/catalog/:type/:id.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
 
     try {
-        const { data } = await axios.get(`${BASE_URL}/movies`, AXIOS_CONFIG);
+        const response = await axios.get(`${BASE_URL}/movies`, AXIOS_CONFIG);
+        const data = response.data;
         const $ = cheerio.load(data);
         const metas = [];
 
-        // Breitere Suche nach Elementen und Links auf der Seite
         $('a').each((_, el) => {
             const $el =$(el);
             const link = $el.attr('href');
             
-            // Prüfen ob der Link zu einem Film/einer Serie gehört
-            if (link && (link.includes('/movie/') || link.includes('/film/') || link.includes('/watch/'))) {
-                const title = $el.attr('title') || $el.find('.title, h2, h3, span').text().trim() \vert{}\vert{}$el.text().trim();
-                const poster = $el.find('img').attr('src') || $el.find('img').attr('data-src') \vert{}\vert{}$el.closest('.movie-card, .item, article').find('img').attr('src');
+            if (link) {
+                if (link.includes('/movie/') || link.includes('/film/') || link.includes('/watch/')) {
+                    let title = $el.attr('title');
+                    if (!title) {
+                        title = $el.find('.title, h2, h3, span').text().trim();
+                    }
+                    if (!title) {
+                        title = $el.text().trim();
+                    }
 
-                if (title && title.length > 2 && !title.toLowerCase().includes('login') && !title.toLowerCase().includes('register')) {
-                    const rawId = link.split('/').filter(Boolean).pop();
-                    if (rawId && !metas.some(m => m.id === `filmo:${rawId}`)) {
-                        metas.push({
-                            id: `filmo:${rawId}`,
-                            type: 'movie',
-                            name: title.replace(/[\n\r]+/g, ' ').trim(),
-                            poster: poster ? (poster.startsWith('http') ? poster : `${BASE_URL}${poster}`) : 'https://via.placeholder.com/300x450?text=Filmo'
-                        });
+                    let poster = $el.find('img').attr('src');
+                    if (!poster) {
+                        poster = $el.find('img').attr('data-src');
+                    }
+                    if (!poster) {
+                        const parentCard = $el.closest('.movie-card, .item, article');
+                        if (parentCard.length > 0) {
+                            poster = parentCard.find('img').attr('src');
+                        }
+                    }
+
+                    if (title) {
+                        if (title.length > 2) {
+                            const lowerTitle = title.toLowerCase();
+                            if (!lowerTitle.includes('login') && !lowerTitle.includes('register')) {
+                                const segments = link.split('/').filter(Boolean);
+                                const rawId = segments.pop();
+                                
+                                if (rawId) {
+                                    let alreadyExists = false;
+                                    for (let i = 0; i < metas.length; i++) {
+                                        if (metas[i].id === 'filmo:' + rawId) {
+                                            alreadyExists = true;
+                                            break;
+                                        }
+                                    }
+
+                                    if (!alreadyExists) {
+                                        let finalPoster = 'https://via.placeholder.com/300x450?text=Filmo';
+                                        if (poster) {
+                                            if (poster.startsWith('http')) {
+                                                finalPoster = poster;
+                                            } else {
+                                                finalPoster = BASE_URL + poster;
+                                            }
+                                        }
+
+                                        metas.push({
+                                            id: 'filmo:' + rawId,
+                                            type: 'movie',
+                                            name: title.replace(/[\n\r]+/g, ' ').trim(),
+                                            poster: finalPoster
+                                        });
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
         });
 
-        // Debugging-Log für Render falls 0 Filme gefunden wurden
         if (metas.length === 0) {
-            console.log('WARNUNG: Keine Filme gefunden! HTML-Auszug:', data.substring(0, 300));
+            console.log('WARNUNG: Keine Filme gefunden! HTML-Auszug:', String(data).substring(0, 300));
             metas.push({
                 id: 'filmo:test-movie',
                 type: 'movie',
@@ -110,9 +156,9 @@ app.get('/stream/:type/:id.json', async (req, res) => {
 
     const rawId = req.params.id.replace('filmo:', '');
     try {
-        const targetUrl = `${BASE_URL}/movie/${rawId}`;
-        const { data } = await axios.get(targetUrl, AXIOS_CONFIG);
-        const $ = cheerio.load(data);
+        const targetUrl = BASE_URL + '/movie/' + rawId;
+        const response = await axios.get(targetUrl, AXIOS_CONFIG);
+        const $ = cheerio.load(response.data);
         const streams = [];
 
         $('.provider-chip').each((_, el) => {
@@ -127,14 +173,25 @@ app.get('/stream/:type/:id.json', async (req, res) => {
             const linkId = $chip.attr('data-movie-link-id');
             const payload = $chip.attr('data-p');
 
-            if (hosterName && linkId) {
-                const streamUrl = `${BASE_URL}/out/${linkId}?p=${encodeURIComponent(payload || '')}`;
+            if (hosterName) {
+                if (linkId) {
+                    let encodedPayload = '';
+                    if (payload) {
+                        encodedPayload = encodeURIComponent(payload);
+                    }
+                    const streamUrl = BASE_URL + '/out/' + linkId + '?p=' + encodedPayload;
 
-                streams.push({
-                    name: 'Filmo.to',
-                    title: `${hosterName} ${tags ? `[${tags}]` : ''}`,
-                    url: streamUrl
-                });
+                    let titleText = hosterName;
+                    if (tags) {
+                        titleText = titleText + ' [' + tags + ']';
+                    }
+
+                    streams.push({
+                        name: 'Filmo.to',
+                        title: titleText,
+                        url: streamUrl
+                    });
+                }
             }
         });
 
@@ -151,5 +208,5 @@ app.get('/', (req, res) => {
 });
 
 app.listen(PORT, () => {
-    console.log(`Filmo Addon läuft auf Port ${PORT}`);
+    console.log('Filmo Addon läuft auf Port ' + PORT);
 });

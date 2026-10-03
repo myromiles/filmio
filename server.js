@@ -17,7 +17,7 @@ const AXIOS_CONFIG = {
     timeout: 10000
 };
 
-// 1. MANIFEST (Stremio Konfiguration mit idPrefixes)
+// 1. MANIFEST
 app.get('/manifest.json', (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
@@ -39,7 +39,7 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// 2. KATALOG (/catalog/movie/filmo_movies.json)
+// 2. KATALOG
 app.get('/catalog/:type/:id.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
@@ -68,7 +68,6 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
             }
         });
 
-        // Fallback-Eintrag, falls die Seite blockiert wird oder keine Filme liefert
         if (metas.length === 0) {
             metas.push({
                 id: 'filmo:test-movie',
@@ -87,7 +86,7 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
                 {
                     id: 'filmo:test-movie',
                     type: 'movie',
-                    name: 'Filmo Server online (Fehler beim Laden der Filme)',
+                    name: 'Filmo Server online (Fehler beim Laden)',
                     poster: 'https://via.placeholder.com/300x450?text=Fehler'
                 }
             ]
@@ -95,7 +94,7 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
     }
 });
 
-// 3. STREAMS (/stream/movie/filmo:123.json)
+// 3. STREAMS
 app.get('/stream/:type/:id.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
@@ -107,7 +106,6 @@ app.get('/stream/:type/:id.json', async (req, res) => {
         const $ = cheerio.load(data);
         const streams = [];
 
-        // Extrahiere alle Hoster-Chips (.provider-chip)
         $('.provider-chip').each((_, el) => {
             const $chip =$(el);
 
@@ -139,7 +137,6 @@ app.get('/stream/:type/:id.json', async (req, res) => {
     }
 });
 
-// Hauptseite für Browser-Aufruf
 app.get('/', (req, res) => {
     res.send('<h1>Filmo V2 Stremio Addon läuft!</h1><p>Manifest-URL: <a href="/manifest.json">/manifest.json</a></p>');
 });

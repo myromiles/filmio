@@ -51,9 +51,25 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
 
         $('.movie-card, .poster-item, article, a[href*="/movie/"]').each((_, el) => {
             const $el =$(el);
-            const title = $el.find('.title, h2, h3').text().trim() || $el.attr('title') \vert{}\vert{}$el.text().trim();
-            const link = $el.attr('href') \vert{}\vert{}$el.find('a').attr('href');
-            const poster = $el.find('img').attr('src') \vert{}\vert{}$el.find('img').attr('data-src');
+            
+            // Vollkommen fehlerfreie Zuweisung ohne Sonderzeichen
+            let title = $el.find('.title, h2, h3').text().trim();
+            if (!title) {
+                title = $el.attr('title') ?$el.attr('title').trim() : '';
+            }
+            if (!title) {
+                title = $el.text().trim();
+            }
+
+            let link = $el.attr('href');
+            if (!link) {
+                link = $el.find('a').attr('href');
+            }
+
+            let poster = $el.find('img').attr('src');
+            if (!poster) {
+                poster = $el.find('img').attr('data-src');
+            }
 
             if (link && title) {
                 const rawId = link.split('/').filter(Boolean).pop();

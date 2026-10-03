@@ -12,7 +12,9 @@ const BASE_URL = 'https://filmo.to';
 const AXIOS_CONFIG = {
     headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7'
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
+        'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Referer': 'https://filmo.to/'
     },
     timeout: 10000
 };
@@ -39,7 +41,7 @@ app.get('/manifest.json', (req, res) => {
     });
 });
 
-// 2. KATALOG
+// 2. KATALOG (Mit erweitertem Scraping & Debugging)
 app.get('/catalog/:type/:id.json', async (req, res) => {
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Content-Type', 'application/json');
@@ -49,47 +51,38 @@ app.get('/catalog/:type/:id.json', async (req, res) => {
         const $ = cheerio.load(data);
         const metas = [];
 
-        $('.movie-card, .poster-item, article, a[href*="/movie/"]').each((_, el) => {
+        // Breitere Suche nach Elementen und Links auf der Seite
+        $('a').each((_, el) => {
             const $el =$(el);
+            const link = $el.attr('href');
             
-            // Vollkommen fehlerfreie Zuweisung ohne Sonderzeichen
-            let title = $el.find('.title, h2, h3').text().trim();
-            if (!title) {
-                title = $el.attr('title') ?$el.attr('title').trim() : '';
-            }
-            if (!title) {
-                title = $el.text().trim();
-            }
+            // Prüfen ob der Link zu einem Film/einer Serie gehört
+            if (link && (link.includes('/movie/') || link.includes('/film/') || link.includes('/watch/'))) {
+                const title = $el.attr('title') || $el.find('.title, h2, h3, span').text().trim() \vert{}\vert{}$el.text().trim();
+                const poster = $el.find('img').attr('src') || $el.find('img').attr('data-src') \vert{}\vert{}$el.closest('.movie-card, .item, article').find('img').attr('src');
 
-            let link = $el.attr('href');
-            if (!link) {
-                link = $el.find('a').attr('href');
-            }
-
-            let poster = $el.find('img').attr('src');
-            if (!poster) {
-                poster = $el.find('img').attr('data-src');
-            }
-
-            if (link && title) {
-                const rawId = link.split('/').filter(Boolean).pop();
-                if (rawId && !metas.some(m => m.id === `filmo:${rawId}`)) {
-                    metas.push({
-                        id: `filmo:${rawId}`,
-                        type: 'movie',
-                        name: title,
-                        poster: poster ? (poster.startsWith('http') ? poster : `${BASE_URL}${poster}`) : 'https://via.placeholder.com/300x450?text=Kein+Poster'
-                    });
+                if (title && title.length > 2 && !title.toLowerCase().includes('login') && !title.toLowerCase().includes('register')) {
+                    const rawId = link.split('/').filter(Boolean).pop();
+                    if (rawId && !metas.some(m => m.id === `filmo:${rawId}`)) {
+                        metas.push({
+                            id: `filmo:${rawId}`,
+                            type: 'movie',
+                            name: title.replace(/[\n\r]+/g, ' ').trim(),
+                            poster: poster ? (poster.startsWith('http') ? poster : `${BASE_URL}${poster}`) : 'https://via.placeholder.com/300x450?text=Filmo'
+                        });
+                    }
                 }
             }
         });
 
+        // Debugging-Log für Render falls 0 Filme gefunden wurden
         if (metas.length === 0) {
+            console.log('WARNUNG: Keine Filme gefunden! HTML-Auszug:', data.substring(0, 300));
             metas.push({
                 id: 'filmo:test-movie',
                 type: 'movie',
-                name: 'Filmo Test Film (Verbindung aktiv)',
-                poster: 'https://via.placeholder.com/300x450?text=Filmo+Test'
+                name: 'Filmo: Keine Filme gefunden (Prüfe Render-Logs)',
+                poster: 'https://via.placeholder.com/300x450?text=Keine+Filme'
             });
         }
 
